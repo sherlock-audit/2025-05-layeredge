@@ -97,7 +97,7 @@ ___
 
 # Audit scope
 
-[edgen-staking @ 94286c4972d5f89bc05b372bee5fad4e067ace1a](https://github.com/Layer-Edge/edgen-staking/tree/94286c4972d5f89bc05b372bee5fad4e067ace1a)
+[edgen-staking @ 3a7f98da9d5dba030823249ff1d2c623d16cbae2](https://github.com/Layer-Edge/edgen-staking/tree/3a7f98da9d5dba030823249ff1d2c623d16cbae2)
 - [edgen-staking/src/WETH9.sol](edgen-staking/src/WETH9.sol)
 - [edgen-staking/src/library/FenwickTree.sol](edgen-staking/src/library/FenwickTree.sol)
 - [edgen-staking/src/stake/LayerEdgeStaking.sol](edgen-staking/src/stake/LayerEdgeStaking.sol)
