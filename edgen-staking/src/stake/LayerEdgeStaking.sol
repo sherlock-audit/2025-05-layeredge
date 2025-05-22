@@ -57,11 +57,11 @@ contract LayerEdgeStaking is
     event TierChanged(address indexed user, Tier to);
     event APYUpdated(Tier indexed tier, uint256 rate, uint256 timestamp);
     event RewardsDeposited(address indexed sender, uint256 amount);
+    event UnstakedQueued(address indexed user, uint256 index, uint256 amount);
 
     // User information
     struct UserInfo {
         uint256 balance; // Current staked balance
-        uint256 depositTime; // When user first deposited
         uint256 lastClaimTime; // Last time user claimed or updated interest
         uint256 interestEarned; // Unclaimed interest earned
         uint256 totalClaimed; // Total interest claimed
@@ -85,11 +85,19 @@ contract LayerEdgeStaking is
         uint256 timestamp;
     }
 
+    // Add a struct for unstake requests
+    struct UnstakeRequest {
+        uint256 amount;
+        uint256 timestamp;
+        bool completed;
+    }
+
     // Storage
     mapping(Tier => APYPeriod[]) public tierAPYHistory; // tier => APY periods
     mapping(address => UserInfo) public users;
     mapping(uint256 => address) public stakerAddress;
     mapping(address => TierEvent[]) public stakerTierHistory;
+    mapping(address => UnstakeRequest[]) public unstakeRequests;
     uint256 public stakerCountInTree;
     uint256 public stakerCountOutOfTree;
     uint256 public totalStaked;
@@ -166,15 +174,23 @@ contract LayerEdgeStaking is
      * @param amount Amount to unstake
      */
     function unstake(uint256 amount) external nonReentrant whenNotPaused {
-        _unstake(amount, msg.sender, false);
+        _unstake(amount, msg.sender);
     }
 
     /**
-     * @notice Unstake native tokens
-     * @param amount Amount to unstake
+     * @notice Complete a specific unstake request
+     * @param index Index of the unstake request to complete
      */
-    function unstakeNative(uint256 amount) external nonReentrant whenNotPaused {
-        _unstake(amount, msg.sender, true);
+    function completeUnstake(uint256 index) external nonReentrant whenNotPaused {
+        _completeUnstake(msg.sender, index, false);
+    }
+
+    /**
+     * @notice Complete a specific unstake request with native token
+     * @param index Index of the unstake request to complete
+     */
+    function completeUnstakeNative(uint256 index) external nonReentrant whenNotPaused {
+        _completeUnstake(msg.sender, index, true);
     }
 
     /**
@@ -498,23 +514,16 @@ contract LayerEdgeStaking is
      * @return balance Current staked balance
      * @return tier Current tier
      * @return apy Current APY rate
-     * @return depositTime Initial deposit time
      * @return pendingRewards Unclaimed rewards
      */
     function getUserInfo(address userAddr)
         external
         view
-        returns (uint256 balance, Tier tier, uint256 apy, uint256 depositTime, uint256 pendingRewards)
+        returns (uint256 balance, Tier tier, uint256 apy, uint256 pendingRewards)
     {
         UserInfo memory user = users[userAddr];
 
-        return (
-            user.balance,
-            getCurrentTier(userAddr),
-            getUserAPY(userAddr),
-            user.depositTime,
-            calculateUnclaimedInterest(userAddr)
-        );
+        return (user.balance, getCurrentTier(userAddr), getUserAPY(userAddr), calculateUnclaimedInterest(userAddr));
     }
 
     /**
@@ -621,19 +630,11 @@ contract LayerEdgeStaking is
     function getAllInfoOfUser(address userAddr)
         external
         view
-        returns (
-            UserInfo memory user,
-            Tier tier,
-            uint256 apy,
-            uint256 depositTime,
-            uint256 pendingRewards,
-            TierEvent[] memory tierHistory
-        )
+        returns (UserInfo memory user, Tier tier, uint256 apy, uint256 pendingRewards, TierEvent[] memory tierHistory)
     {
         user = users[userAddr];
         tier = getCurrentTier(userAddr);
         apy = getUserAPY(userAddr);
-        depositTime = user.depositTime;
         pendingRewards = calculateUnclaimedInterest(userAddr);
         tierHistory = stakerTierHistory[userAddr];
     }
@@ -713,7 +714,6 @@ contract LayerEdgeStaking is
 
         // Update user balances
         user.balance += amount;
-        user.depositTime = block.timestamp;
         user.lastClaimTime = block.timestamp;
 
         // Update total staked
@@ -722,13 +722,11 @@ contract LayerEdgeStaking is
         emit Staked(userAddr, amount, tier);
     }
 
-    function _unstake(uint256 amount, address userAddr, bool isNative) internal {
+    function _unstake(uint256 amount, address userAddr) internal {
         UserInfo storage user = users[userAddr];
 
         // require(user.isActive, "No active stake");
         require(user.balance >= amount, "Insufficient balance");
-        require(block.timestamp >= user.depositTime + UNSTAKE_WINDOW, "Unstaking window not reached");
-
         // Update interest before changing balance
         _updateInterest(userAddr);
 
@@ -750,16 +748,32 @@ contract LayerEdgeStaking is
             _checkBoundariesAndRecord(true);
         }
 
-        // Transfer tokens from contract to user
+        // Add unstake request instead of immediate transfer
+        unstakeRequests[userAddr].push(UnstakeRequest({amount: amount, timestamp: block.timestamp, completed: false}));
+
+        emit UnstakedQueued(userAddr, unstakeRequests[userAddr].length - 1, amount);
+    }
+
+    function _completeUnstake(address userAddr, uint256 index, bool isNative) internal {
+        UnstakeRequest[] storage requests = unstakeRequests[userAddr];
+        require(index < requests.length, "Invalid unstake request index");
+
+        UnstakeRequest storage request = requests[index];
+        require(!request.completed, "Unstake request already completed");
+        require(block.timestamp >= request.timestamp + UNSTAKE_WINDOW, "Unstaking window not reached");
+
+        request.completed = true;
+
+        // Transfer tokens back to user
         if (!isNative) {
-            require(stakingToken.transfer(userAddr, amount), "Token transfer failed");
+            require(stakingToken.transfer(userAddr, request.amount), "Token transfer failed");
         } else {
-            IWETH(address(stakingToken)).withdraw(amount);
-            (bool success,) = payable(userAddr).call{value: amount}("");
+            IWETH(address(stakingToken)).withdraw(request.amount);
+            (bool success,) = payable(userAddr).call{value: request.amount}("");
             require(success, "Unstake native transfer failed");
         }
 
-        emit Unstaked(userAddr, amount);
+        emit Unstaked(userAddr, request.amount);
     }
 
     function _claimInterest(address userAddr, bool isNative) internal {

@@ -236,7 +236,7 @@ contract TierBoundaryAndInterestTest is Test {
         uint256 expectedInterest = tier2Interest + tier1Interest;
 
         // Get actual interest from contract
-        (,,,, uint256 actualInterest) = staking.getUserInfo(bob);
+        (,,, uint256 actualInterest) = staking.getUserInfo(bob);
 
         // Allow for small rounding differences due to block timestamps
         assertApproxEqRel(actualInterest, expectedInterest, 0.01e18); // 1% tolerance
@@ -287,7 +287,7 @@ contract TierBoundaryAndInterestTest is Test {
         uint256 expectedInterest = tier1Interest;
 
         // Get actual interest from contract
-        (,,,, uint256 actualInterest) = staking.getUserInfo(alice);
+        (,,, uint256 actualInterest) = staking.getUserInfo(alice);
 
         // Allow for small rounding differences due to block timestamps
         assertApproxEqRel(actualInterest, expectedInterest, 0.01e18); // 1% tolerance
@@ -380,7 +380,7 @@ contract TierBoundaryAndInterestTest is Test {
         staking.unstake(MIN_STAKE);
 
         //Assert bob out of tree
-        (,,,,,,, bool outOfTree,,) = staking.users(bob);
+        (,,,,,, bool outOfTree,,) = staking.users(bob);
         assertEq(outOfTree, true);
         console2.log("bob out of tree", outOfTree);
 
@@ -402,7 +402,7 @@ contract TierBoundaryAndInterestTest is Test {
         assertEq(uint256(staking.getCurrentTier(grace)), uint256(LayerEdgeStaking.Tier.Tier3));
 
         // Bob should be unstaked and inactive
-        (uint256 bobBalance,,,,) = staking.getUserInfo(bob);
+        (uint256 bobBalance,,,) = staking.getUserInfo(bob);
         assertEq(bobBalance, 0);
 
         // Check tier history for Eve
@@ -485,13 +485,13 @@ contract TierBoundaryAndInterestTest is Test {
         uint256 bob_expectedInterest = bob_tier2Interest;
 
         // Get Bob's actual interest
-        (,,,, uint256 bob_actualInterest) = staking.getUserInfo(bob);
+        (,,, uint256 bob_actualInterest) = staking.getUserInfo(bob);
 
         // Verify Bob's interest calculation
         assertApproxEqRel(bob_actualInterest, bob_expectedInterest, 0.01e18);
 
         // Also check Bob's current tier is correct (should be Tier 2)
-        (, LayerEdgeStaking.Tier bobTier,,,) = staking.getUserInfo(bob);
+        (, LayerEdgeStaking.Tier bobTier,,) = staking.getUserInfo(bob);
         assertEq(uint256(bobTier), uint256(LayerEdgeStaking.Tier.Tier2));
 
         // Save Bob's accrued interest before tier change
@@ -550,7 +550,7 @@ contract TierBoundaryAndInterestTest is Test {
         uint256 bob_total_expected_interest = bobInterestBeforeTierChange + bob_additional_tier1Interest;
 
         // Get Bob's actual interest after this additional period
-        (,,,, uint256 bob_new_actualInterest) = staking.getUserInfo(bob);
+        (,,, uint256 bob_new_actualInterest) = staking.getUserInfo(bob);
 
         // Verify Bob's total interest calculation
         assertApproxEqRel(

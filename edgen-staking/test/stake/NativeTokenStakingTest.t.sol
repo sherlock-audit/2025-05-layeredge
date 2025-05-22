@@ -28,6 +28,7 @@ contract NativeTokenStakingTest is Test {
         NetworkConfig memory config = helperConfig.getActiveNetworkConfigNative();
         admin = config.owner;
         stakingToken = config.stakingToken;
+        weth = WETH9(payable(address(stakingToken)));
 
         vm.startPrank(admin);
         vm.deal(admin, REWARDS_AMOUNT);
@@ -48,8 +49,9 @@ contract NativeTokenStakingTest is Test {
         vm.startPrank(user);
         layerEdgeStaking.stakeNative{value: STAKE_AMOUNT}();
 
+        layerEdgeStaking.unstake(UNSTAKE_AMOUNT);
         vm.warp(block.timestamp + layerEdgeStaking.UNSTAKE_WINDOW() + 1);
-        layerEdgeStaking.unstakeNative(UNSTAKE_AMOUNT);
+        layerEdgeStaking.completeUnstakeNative(0);
         assertEq(user.balance, UNSTAKE_AMOUNT);
         vm.stopPrank();
     }
@@ -60,7 +62,7 @@ contract NativeTokenStakingTest is Test {
         layerEdgeStaking.stakeNative{value: STAKE_AMOUNT}();
 
         vm.warp(block.timestamp + 30 days);
-        (,,,, uint256 claimable) = layerEdgeStaking.getUserInfo(user);
+        (,,, uint256 claimable) = layerEdgeStaking.getUserInfo(user);
         layerEdgeStaking.claimInterestNative();
         assertEq(user.balance, claimable);
         vm.stopPrank();
@@ -91,5 +93,65 @@ contract NativeTokenStakingTest is Test {
         assertEq(success, true);
 
         vm.stopPrank();
+    }
+
+    function test_LayerEdgeStaking_CompleteUnstake_Native() public {
+        // Initial setup - user stakes native ETH
+        vm.deal(user, STAKE_AMOUNT);
+        uint256 initialAliceETH = address(user).balance;
+        uint256 initialContractBalance = weth.balanceOf(address(layerEdgeStaking));
+
+        vm.prank(user);
+        layerEdgeStaking.stakeNative{value: STAKE_AMOUNT}();
+
+        // Check balances after staking
+        assertEq(
+            address(user).balance, initialAliceETH - STAKE_AMOUNT, "user ETH balance should decrease after staking"
+        );
+        assertEq(
+            weth.balanceOf(address(layerEdgeStaking)),
+            initialContractBalance + STAKE_AMOUNT,
+            "Contract WETH balance should increase after staking"
+        );
+
+        // Queue unstake
+        vm.prank(user);
+        layerEdgeStaking.unstake(STAKE_AMOUNT);
+
+        // Check balances after unstake request (tokens still in contract)
+        assertEq(
+            address(user).balance,
+            initialAliceETH - STAKE_AMOUNT,
+            "user ETH balance should remain the same after unstake request"
+        );
+        assertEq(
+            weth.balanceOf(address(layerEdgeStaking)),
+            initialContractBalance + STAKE_AMOUNT,
+            "Contract WETH balance should remain the same after unstake request"
+        );
+
+        // Verify unstake request is created
+        (uint256 amount, uint256 timestamp, bool completed) = layerEdgeStaking.unstakeRequests(user, 0);
+        assertEq(amount, STAKE_AMOUNT, "Unstake request amount should match");
+        assertFalse(completed, "Unstake request should not be completed yet");
+
+        // Advance time past unstaking window
+        vm.warp(timestamp + 7 days + 1);
+
+        // Complete unstake as native ETH
+        vm.prank(user);
+        layerEdgeStaking.completeUnstakeNative(0);
+
+        // Check balances after completing unstake
+        assertEq(address(user).balance, initialAliceETH, "user ETH balance should be restored after completing unstake");
+        assertEq(
+            weth.balanceOf(address(layerEdgeStaking)),
+            initialContractBalance,
+            "Contract WETH balance should be restored after completing unstake"
+        );
+
+        // Verify unstake request is completed
+        (amount, timestamp, completed) = layerEdgeStaking.unstakeRequests(user, 0);
+        assertTrue(completed, "Unstake request should be marked as completed");
     }
 }
